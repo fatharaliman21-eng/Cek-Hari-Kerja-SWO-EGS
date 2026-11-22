@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <title>Cek Hari Kerja EGS</title>
+  <style>
+    /* ===== Gaya panel admin: latar abu terang, kartu putih, tombol merah ===== */
+    :root { --bg:#f0f2f5; --line:#dcdfe6; --ink:#1f2329; --mute:#8a9099; --head:#f5f6f8; --red:#d8433d; --navy:#0f1b2d; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 Inter, 'Segoe UI', Roboto, system-ui, sans-serif; }
+    body::before { content: ""; position: fixed; inset: 0 auto 0 0; width: 44px; background: var(--navy); }  /* rel samping gelap */
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 16px 16px 40px 60px; }
+    h1 { margin: 0; font-size: 20px; }
+    .sub { margin: 2px 0 14px; color: var(--mute); }
+    .card { margin-bottom: 12px; padding: 16px; background: #fff; border: 1px solid #e6e8ec; }
+
+    /* ===== Filter: kotak berlabel ===== */
+    .filters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 24px; }
+    .f { display: flex; min-width: 0; border: 1px solid var(--line); background: #fff; }
+    .f:focus-within { border-color: #2b2f36; }
+    .f label { display: flex; align-items: center; flex: none; padding: 0 12px; background: var(--head); border-right: 1px solid var(--line); white-space: nowrap; }
+    .f input, .f select { flex: 1; min-width: 0; padding: 8px 10px; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
+    .f input::placeholder { color: #b4b8c0; }
+    .f input[readonly] { background: #f7f8fa; }
+    .sep { align-self: center; color: var(--mute); }
+    .x { border: 0; background: none; padding: 0 10px; color: #a0a5ad; font-size: 20px; cursor: pointer; }
+    .actions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+    .msg { margin: 0 auto 0 0; color: var(--mute); }
+    .msg.bad { color: var(--red); }
+    .btn { padding: 7px 18px; border: 1px solid var(--line); background: #fff; color: inherit; font: inherit; cursor: pointer; }
+    .btn.red { background: var(--red); border-color: var(--red); color: #fff; font-weight: 500; }
+    .btn:hover:not(:disabled) { filter: brightness(.95); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    :is(.btn, .x, .pg):focus-visible { outline: 2px solid var(--red); outline-offset: 1px; }
+
+    /* ===== Ringkasan ===== */
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
+    .stats .card { margin: 0; }
+    .stats b { display: block; font-size: 24px; line-height: 1.3; overflow-wrap: anywhere; }
+    .stats span { color: var(--mute); }
+
+    /* ===== Tabel + paginasi ===== */
+    .scroll { overflow-x: auto; margin-top: 12px; }
+    table { width: 100%; min-width: 720px; border-collapse: collapse; }
+    th { padding: 12px; background: var(--head); text-align: left; font-weight: 600; white-space: nowrap; }
+    td { padding: 12px; border-bottom: 1px solid #eceef1; white-space: nowrap; }
+    td.kosong { padding: 48px 12px; text-align: center; color: var(--mute); white-space: normal; }
+    .dot { display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; background: #b8bcc4; }
+    .dot.ok { background: #2fa84f; } .dot.warn { background: #f0a020; }
+    .tag { padding: 1px 8px; border-radius: 2px; font-size: 12px; background: #eef0f3; color: #667085; }
+    .tag.ok { background: #e6f5ea; color: #1f8a3b; } .tag.warn { background: #fff0d9; color: #b45f00; }
+    .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+    .info { margin-right: auto; color: var(--mute); }
+    .pg, .cur { min-width: 30px; height: 30px; border: 1px solid var(--line); background: #fff; color: inherit; font: inherit; }
+    .pg { cursor: pointer; } .pg:disabled { opacity: .4; cursor: not-allowed; }
+    .cur { display: inline-flex; align-items: center; justify-content: center; border-color: var(--red); color: var(--red); }
+    .sm select { padding: 5px 8px; }
+
+    @media (max-width: 900px) { .filters, .stats { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 600px) {
+      body::before { display: none; }
+      .wrap { padding: 12px; }
+      .filters { grid-template-columns: 1fr; }
+      .actions .btn { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>Cek hari kerja</h1>
+    <p class="sub">Daily worker PT Esa Gemilang Sakti</p>
+
+    <!-- Filter: hanya Ops ID yang bisa diketik. Tanggal dipilih lewat kalender, status lewat pilihan,
+         dan Nama/Vendor/Divisi terisi otomatis (terkunci). -->
+    <section class="card filters">
+      <div class="f"><label>Tanggal</label><input type="date" id="dari" aria-label="Dari tanggal"><span class="sep">–</span><input type="date" id="sampai" aria-label="Sampai tanggal"></div>
+      <div class="f"><label for="ops">Ops ID</label><input id="ops" maxlength="30" autocomplete="off" spellcheck="false" placeholder="Mohon masukan"><button class="x" id="clr" type="button" aria-label="Hapus Ops ID" hidden>&times;</button></div>
+      <div class="f"><label for="stat">Status Absensi</label><select id="stat"><option value="">Semua</option><option value="ok">Complete</option><option value="warn">Take out</option></select></div>
+      <div class="f"><label for="nama">Nama Lengkap</label><input id="nama" readonly tabindex="-1" placeholder="Terisi otomatis"></div>
+      <div class="f"><label for="vendor">Vendor</label><input id="vendor" readonly tabindex="-1" placeholder="Terisi otomatis"></div>
+      <div class="f"><label for="divisi">Divisi</label><input id="divisi" readonly tabindex="-1" placeholder="Terisi otomatis"></div>
+      <div class="actions">
+        <p class="msg" id="msg" role="status" aria-live="polite"></p>
+        <button class="btn red" id="cari" type="button">Cari</button>
+        <button class="btn" id="reset" type="button">Reset</button>
+      </div>
+    </section>
+
+    <section class="stats" id="stats" hidden>
+      <div class="card"><b id="sTotal"></b><span>Total hari kerja</span></div>
+      <div class="card"><b id="sOk"></b><span>Complete</span></div>
+      <div class="card"><b id="sWarn"></b><span>Take out</span></div>
+      <div class="card"><b id="sLast"></b><span>Terakhir masuk</span></div>
+    </section>
+
+    <section class="card">
+      <button class="btn" id="ekspor" type="button" disabled>Ekspor CSV</button>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Tanggal</th><th>Hari</th><th>Ops ID</th><th>Nama Lengkap</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Status Absensi</th></tr></thead>
+          <tbody id="rBody"></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <span class="info" id="info"></span>
+        <button class="pg" id="prev" type="button" aria-label="Halaman sebelumnya">&lsaquo;</button>
+        <span class="cur" id="cur">1</span>
+        <button class="pg" id="next" type="button" aria-label="Halaman berikutnya">&rsaquo;</button>
+        <div class="f sm"><select id="size" aria-label="Data per halaman"><option value="12">12 / Halaman</option><option value="24" selected>24 / Halaman</option><option value="48">48 / Halaman</option></select></div>
+        <div class="f sm"><label for="goto">Pergi ke</label><select id="goto"></select></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    // Cegah HTML tersisip dari data sheet
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    // Kelas warna status: complete = hijau, take out = oranye, lainnya = abu
+    const jenis = s => /complete/i.test(s) ? 'ok' : /take\s*-?\s*out/i.test(s) ? 'warn' : '';
+    let DATA = null, VIEW = [], page = 1;   // data dari server, baris setelah filter, halaman aktif
+
+    function pesan(t, bad) { $('msg').textContent = t; $('msg').className = 'msg' + (bad ? ' bad' : ''); }
+    function isi(p) { $('nama').value = p ? p.nama : ''; $('vendor').value = p ? p.vendor : ''; $('divisi').value = p ? p.divisi : ''; }
+
+    // Cari: kirim Ops ID ke Code.gs (fungsi cekHariKerja)
+    function cek() {
+      const id = $('ops').value.trim();
+      if (!id) return pesan('Mohon masukan Ops ID.', true);
+      $('cari').disabled = true; $('cari').textContent = 'Mencari…'; pesan('');
+      const selesai = () => { $('cari').disabled = false; $('cari').textContent = 'Cari'; };
+      google.script.run
+        .withSuccessHandler(r => { selesai(); r && r.ok ? tampil(r) : kosong((r && r.pesan) || 'Data tidak ditemukan.'); })
+        .withFailureHandler(() => { selesai(); kosong('Koneksi gagal. Coba lagi sebentar.'); })
+        .cekHariKerja(id);
+    }
+
+    function tampil(r) {
+      DATA = r; isi(r.profil);
+      $('sTotal').textContent = r.total; $('sOk').textContent = r.complete;
+      $('sWarn').textContent = r.takeOut; $('sLast').textContent = r.terakhir || '-';
+      $('stats').hidden = false;
+      terapkan();
+    }
+
+    function kosong(t) { DATA = null; isi(null); $('stats').hidden = true; pesan(t, !!t); terapkan(); }
+
+    // Terapkan filter tanggal + status pada data yang sudah dimuat
+    function terapkan() {
+      const a = $('dari').value, b = $('sampai').value, s = $('stat').value;
+      VIEW = DATA ? DATA.riwayat.filter(x => (!a || x.tgl >= a) && (!b || x.tgl <= b) && (!s || jenis(x.status) === s)) : [];
+      page = 1; gambar();
+    }
+
+    // Gambar tabel halaman aktif + kontrol paginasi
+    function gambar() {
+      const size = +$('size').value, pages = Math.max(1, Math.ceil(VIEW.length / size));
+      page = Math.min(Math.max(page, 1), pages);
+      const rows = VIEW.slice((page - 1) * size, page * size);
+      $('rBody').innerHTML = rows.length
+        ? rows.map(x => '<tr><td><i class="dot ' + jenis(x.status) + '"></i>' + esc(x.tgl) + '</td><td>' + esc(x.hari) + '</td><td>' + esc(DATA.profil.opsId) +
+            '</td><td>' + esc(DATA.profil.nama) + '</td><td>' + esc(x.jamMasuk) + '</td><td>' + esc(x.jamPulang) +
+            '</td><td><span class="tag ' + jenis(x.status) + '">' + esc(x.status) + '</span></td></tr>').join('')
+        : '<tr><td colspan="7" class="kosong">' + (DATA ? 'Tidak ada data untuk filter ini.' : 'Ketik Ops ID lalu klik Cari.') + '</td></tr>';
+      $('cur').textContent = page;
+      $('prev').disabled = page <= 1; $('next').disabled = page >= pages;
+      $('goto').innerHTML = Array.from({ length: pages }, (_, i) => '<option' + (i + 1 === page ? ' selected' : '') + '>' + (i + 1) + '</option>').join('');
+      $('info').textContent = DATA ? 'Total ' + VIEW.length + ' data' : '';
+      $('ekspor').disabled = !VIEW.length;
+    }
+
+    // Ekspor semua baris hasil filter ke CSV (pemisah ";" agar rapi di Excel regional Indonesia)
+    function ekspor() {
+      const q = v => '"' + String(v).replace(/"/g, '""') + '"';
+      const p = DATA.profil;
+      const baris = [['Tanggal', 'Hari', 'Ops ID', 'Nama Lengkap', 'Jam Masuk', 'Jam Pulang', 'Status Absensi']]
+        .concat(VIEW.map(x => [x.tgl, x.hari, p.opsId, p.nama, x.jamMasuk, x.jamPulang, x.status]));
+      const blob = new Blob(['\ufeff' + baris.map(r => r.map(q).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'hari-kerja-' + p.opsId + '.csv'; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+
+    // ----- Event -----
+    $('cari').onclick = cek;
+    $('reset').onclick = () => { ['ops', 'dari', 'sampai', 'stat'].forEach(i => { $(i).value = ''; }); $('clr').hidden = true; kosong(''); };
+    $('clr').onclick = () => { $('ops').value = ''; $('clr').hidden = true; $('ops').focus(); };
+    // Ops ID: hanya huruf, angka, "_" dan "-"
+    $('ops').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^A-Za-z0-9_-]/g, ''); $('clr').hidden = !e.target.value; });
+    $('ops').addEventListener('keydown', e => { if (e.key === 'Enter') cek(); });
+    ['dari', 'sampai'].forEach(i => {
+      // tanggal hanya dipilih lewat kalender, tidak bisa diketik
+      $(i).addEventListener('keydown', e => { if (/^[0-9a-z]$/i.test(e.key) && !e.ctrlKey && !e.metaKey) e.preventDefault(); });
+      $(i).addEventListener('change', terapkan);
+    });
+    $('stat').onchange = terapkan;
+    $('size').onchange = () => { page = 1; gambar(); };
+    $('goto').onchange = e => { page = +e.target.value; gambar(); };
+    $('prev').onclick = () => { page--; gambar(); };
+    $('next').onclick = () => { page++; gambar(); };
+    $('ekspor').onclick = ekspor;
+    gambar();   // tampilan awal: tabel kosong
+  </script>
+</body>
+</html>
